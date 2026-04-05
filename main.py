@@ -482,6 +482,65 @@ def get_album():
         api_service.logger.error(f"获取专辑异常: {e}\n{traceback.format_exc()}")
         return APIResponse.error(f"获取专辑失败: {str(e)}", 500)
 
+@app.route('/artist/albums', methods=['GET', 'POST'])
+def get_artist_albums_api():
+    """获取歌手名下专辑API"""
+    try:
+        # 获取请求参数
+        data = api_service._safe_get_request_data()
+        artist_id = data.get('id')
+        
+        # 参数验证
+        validation_error = api_service._validate_request_params({'artist_id': artist_id})
+        if validation_error:
+            return validation_error
+        
+        cookies = api_service._get_cookies()
+        
+        # --- 核心修改：后端自动分页拉取机制 ---
+        step_limit = 50  # 强制使用安全数量 50 作为每次拉取的上限
+        current_offset = 0
+        all_albums = []
+        artist_info = {}
+        has_more = True
+        
+        # 循环分页拉取，避免触发网易云超时或反爬限制
+        while has_more:
+            api_service.logger.info(f"正在拉取歌手专辑: limit={step_limit}, offset={current_offset}")
+            result = api_service.netease_api.get_artist_albums(artist_id, cookies, step_limit, current_offset)
+            
+            # 提取歌手基础信息（在第一页提取即可）
+            if not artist_info and result.get('artist'):
+                artist_info = result.get('artist')
+            
+            # 汇总当前页的专辑
+            current_albums = result.get('hotAlbums', [])
+            all_albums.extend(current_albums)
+            
+            # 判断是否有下一页
+            has_more = result.get('more', False)
+            if has_more:
+                current_offset += step_limit
+                time.sleep(2)  # 强制休眠 0.5 秒，保护 IP 不被封禁
+                
+            # 安全锁：限制最大拉取数量(比如500张/10页)，防止死循环导致前端一直转圈等待
+            if len(all_albums) >= 500:
+                break
+
+        # 组装响应格式，使其与单次请求的结构保持一致
+        response_data = {
+            'status': 200,
+            'artist_albums': {
+                'artist': artist_info,
+                'hotAlbums': all_albums
+            }
+        }
+        
+        return APIResponse.success(response_data, f"成功获取 {len(all_albums)} 张专辑")
+        
+    except Exception as e:
+        api_service.logger.error(f"获取歌手专辑异常: {e}\n{traceback.format_exc()}")
+        return APIResponse.error(f"获取歌手专辑失败: {str(e)}", 500)
 
 @app.route('/download', methods=['GET', 'POST'])
 @app.route('/Download', methods=['GET', 'POST'])  # 向后兼容
@@ -619,6 +678,7 @@ def api_info():
                 '/search': 'GET/POST - 搜索音乐',
                 '/playlist': 'GET/POST - 获取歌单详情',
                 '/album': 'GET/POST - 获取专辑详情',
+                '/artist/albums': 'GET/POST - 获取歌手专辑',
                 '/download': 'GET/POST - 下载音乐',
                 '/api/info': 'GET - API信息'
             },
@@ -655,6 +715,7 @@ def start_api_server():
         print(f"  ├─ POST /search        - 搜索音乐")
         print(f"  ├─ POST /playlist      - 获取歌单详情")
         print(f"  ├─ POST /album         - 获取专辑详情")
+        print(f"  ├─ POST /artist/albums - 获取歌手专辑")
         print(f"  ├─ POST /download      - 下载音乐")
         print(f"  └─ GET  /api/info      - API信息")
         print("\n🎵 支持的音质:")

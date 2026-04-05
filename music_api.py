@@ -303,6 +303,7 @@ class NeteaseAPI:
                     'name': item['name'],
                     'artists': '/'.join(artist['name'] for artist in item['ar']),
                     'album': item['al']['name'],
+                    'album_id': item['al'].get('id'),
                     'picUrl': item['al']['picUrl']
                 }
                 songs.append(song_info)
@@ -471,6 +472,46 @@ class NeteaseAPI:
         
         enc_id = self.netease_encrypt_id(str(pic_id))
         return f'https://p3.music.126.net/{enc_id}/{pic_id}.jpg?param={size}y{size}'
+
+    def get_artist_albums(self, artist_id: int, cookies: Dict[str, str], limit: int = 50, offset: int = 0) -> Dict[str, Any]:
+        """获取歌手名下的专辑列表
+        
+        Args:
+            artist_id: 歌手ID
+            cookies: 用户cookies
+            limit: 每页返回数量（默认50）
+            offset: 偏移量（用于翻页，如 limit=50, offset=50 表示第二页）
+            
+        Returns:
+            歌手专辑详情信息
+            
+        Raises:
+            APIException: API调用失败时抛出
+        """
+        try:
+            url = f'https://music.163.com/api/artist/albums/{artist_id}'
+            params = {
+                'limit': limit,
+                'offset': offset
+            }
+            headers = {
+                'User-Agent': APIConstants.USER_AGENT,
+                'Referer': APIConstants.REFERER
+            }
+            
+            # 发起带参数的 GET 请求
+            response = requests.get(url, params=params, headers=headers, cookies=cookies, timeout=30)
+            response.raise_for_status()
+            
+            result = response.json()
+            if result.get('code') != 200:
+                raise APIException(f"获取歌手专辑失败: {result.get('message', '未知错误')}")
+            
+            return result
+        except requests.RequestException as e:
+            raise APIException(f"获取歌手专辑请求失败: {e}")
+        except (json.JSONDecodeError, KeyError) as e:
+            raise APIException(f"解析歌手专辑响应失败: {e}")
 
 
 class QRLoginManager:
@@ -659,6 +700,11 @@ def qr_login() -> Optional[str]:
     """二维码登录（向后兼容）"""
     manager = QRLoginManager()
     return manager.qr_login()
+
+def artist_albums(artist_id: int, cookies: Dict[str, str], limit: int = 50, offset: int = 0) -> Dict[str, Any]:
+    """获取歌手专辑（向后兼容）"""
+    api = NeteaseAPI()
+    return api.get_artist_albums(artist_id, cookies, limit, offset)
 
 
 if __name__ == "__main__":
