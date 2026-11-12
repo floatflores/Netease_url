@@ -10,6 +10,7 @@
 """
 
 import json
+import os
 import urllib.parse
 import time
 from random import randrange
@@ -177,10 +178,10 @@ class NeteaseAPI:
             payload = {
                 'ids': [song_id],
                 'level': quality,
-                'encodeType': 'flac',
+                'encodeType': 'mp4' if quality == 'dolby' else 'flac',
                 'header': json.dumps(config),
             }
-            
+
             if quality == 'sky':
                 payload['immerseType'] = 'c51'
             
@@ -705,6 +706,56 @@ def artist_albums(artist_id: int, cookies: Dict[str, str], limit: int = 50, offs
     """获取歌手专辑（向后兼容）"""
     api = NeteaseAPI()
     return api.get_artist_albums(artist_id, cookies, limit, offset)
+
+
+# ============ Cookie 工具 ============
+
+DEFAULT_COOKIE_FILE = "cookie.txt"
+
+
+def load_cookies(path: str = DEFAULT_COOKIE_FILE) -> Dict[str, str]:
+    """从 cookie.txt 直接读取并解析为 dict
+
+    支持标准 ``NMTID=xxx; _ntes_nnid=xxx; ...`` 格式。
+    文件不存在或解析失败返回空 dict（不抛异常，调用方决定如何处理）。
+    """
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read().strip()
+    except OSError:
+        return {}
+    return parse_cookie_string(content)
+
+
+def parse_cookie_string(cookie_string: str) -> Dict[str, str]:
+    """把 ``k1=v1; k2=v2`` 格式字符串解析为 dict
+
+    支持 ``;`` 或 ``\\n`` 作为分隔符。
+    """
+    cookies: Dict[str, str] = {}
+    if not cookie_string:
+        return cookies
+    cookie_string = cookie_string.strip()
+    if not cookie_string:
+        return cookies
+    for sep in (";", "\n"):
+        if sep in cookie_string:
+            pairs = cookie_string.split(sep)
+            break
+    else:
+        pairs = [cookie_string]
+    for pair in pairs:
+        pair = pair.strip()
+        if not pair or "=" not in pair:
+            continue
+        key, value = pair.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if key and value:
+            cookies[key] = value
+    return cookies
 
 
 if __name__ == "__main__":
